@@ -1,0 +1,180 @@
+# ============================================================
+#   .gitignore — Crime Hotspot Visualization Project
+#   Fichiers exclus du dépôt GitHub
+# ============================================================
+
+
+# ────────────────────────────────────────────
+# 📦 NODE.JS — Dépendances installées localement
+# ────────────────────────────────────────────
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Lock files optionnels (conserver package-lock.json est recommandé,
+# mais yarn.lock / pnpm-lock.yaml ne sont pas utilisés ici)
+yarn.lock
+pnpm-lock.yaml
+
+
+# ────────────────────────────────────────────
+# ⚡ VITE — Build de production et cache
+# ────────────────────────────────────────────
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+.vite/
+
+
+# ────────────────────────────────────────────
+# 🐍 PYTHON — Cache et bytecode
+# ────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Environnements virtuels Python
+.venv/
+venv/
+env/
+.env/
+ENV/
+
+# Distribution / packaging Python
+dist/
+build/
+*.egg-info/
+*.egg
+.eggs/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+
+# ────────────────────────────────────────────
+# 📊 DONNÉES — Fichiers volumineux ou générés
+# ────────────────────────────────────────────
+
+# Fichiers CSV nettoyés (générés automatiquement par clean_data.py)
+# → relancer : python clean_data.py
+data/cleaned/
+backend/data/crime_cleaned.csv
+
+# Fichier US Census brut (14.9 MB — trop lourd pour GitHub)
+data/raw/us_census.csv
+
+# chicago_crime.csv est déjà géré par Git LFS (.gitattributes)
+# → Le pointeur LFS (135 octets) peut être commis.
+
+# Notebooks Jupyter (résultats de cellule et métadonnées volumineuses)
+*.ipynb
+data/raw/chicago_crime.ipynb
+
+# Modèles sauvegardés (binaires lourds)
+data/raw/savedModelsnParams/
+
+
+# ────────────────────────────────────────────
+# 🔐 VARIABLES D'ENVIRONNEMENT — Secrets
+# ────────────────────────────────────────────
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+
+# ────────────────────────────────────────────
+# 🖥️ SYSTÈMES D'EXPLOITATION
+# ────────────────────────────────────────────
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+
+# ────────────────────────────────────────────
+# 🛠️ ÉDITEURS ET IDEs
+# ────────────────────────────────────────────
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# JetBrains (PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim / Neovim
+*.swp
+*.swo
+*~
+
+# Emacs
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+
+# ────────────────────────────────────────────
+# 📝 LOGS ET FICHIERS TEMPORAIRES
+# ────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Fichiers temporaires
+*.tmp
+*.temp
+*.bak
+*.swp
+
+data/raw/ 
+node_modules/
+
+
+# ────────────────────────────────────────────
+# 📋 CE QUI EST INCLUS DANS LE DÉPÔT
+# ────────────────────────────────────────────
+# ✅ clean_data.py          — Pipeline de nettoyage
+# ✅ clustering_service.py  — Microservice DBSCAN Flask
+# ✅ README.md              — Documentation complète
+# ✅ cleaning_report.md     — Rapport de nettoyage
+# ✅ backend/server.js      — Serveur Express
+# ✅ backend/routes/        — Routes API
+# ✅ backend/controllers/   — Contrôleurs
+# ✅ backend/package.json   — Dépendances backend
+# ✅ frontend/src/          — Code source React
+# ✅ frontend/package.json  — Dépendances frontend
+# ✅ frontend/vite.config.js
+# ✅ frontend/index.html
+# ✅ data/raw/chicago_crime.csv  (pointeur Git LFS — 135 octets)
+# ✅ data/raw/.gitattributes     (configuration Git LFS)
+# ✅ data/raw/miscdata/          (GeoJSON des limites de Chicago)
+# ✅ data/raw/images/            (carte de référence Chicago)

@@ -1,0 +1,27 @@
+{
+  "name": "crime-hotspot-backend",
+  "version": "1.0.0",
+  "description": "Express REST API for Chicago Crime Hotspot Visualization",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "crime",
+    "hotspot",
+    "express",
+    "node",
+    "api"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "csv-parser": "^3.0.0",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}
