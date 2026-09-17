@@ -1,16 +1,16 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
-const CLUSTER_API_URL = import.meta.env.VITE_CLUSTER_API_URL ?? '/cluster-api';
+const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://crime-hotspot-owyh.onrender.com' : '');
+const CLUSTER_BASE = import.meta.env.VITE_CLUSTER_API_URL || (import.meta.env.PROD ? 'https://crime-hotspot-1.onrender.com' : '/cluster-api');
 
 const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
   timeout: 10000,
 });
 
 const clusterClient = axios.create({
-  baseURL: CLUSTER_API_URL,
+  baseURL: CLUSTER_BASE,
   headers: { 'Content-Type': 'application/json' },
   timeout: 60000,
 });
