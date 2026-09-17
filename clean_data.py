@@ -13,6 +13,7 @@ records, allowing academic projects to run and render hotspots instantly.
 
 import os
 import sys
+import json
 import numpy as np
 import pandas as pd
 
@@ -20,10 +21,16 @@ import pandas as pd
 RAW_DIR = os.path.join("data", "raw")
 CLEANED_DIR = os.path.join("data", "cleaned")
 CENSUS_RAW_PATH = os.path.join(RAW_DIR, "us_census.csv")
+CENSUS_FALLBACK_PATHS = [
+    CENSUS_RAW_PATH,
+    os.path.join(RAW_DIR, "acs2017_census_tract_data.csv"),
+    os.path.join(RAW_DIR, "acs2015_census_tract_data.csv"),
+]
 CRIME_RAW_PATH = os.path.join(RAW_DIR, "chicago_crime.csv")
 
 CENSUS_CLEANED_PATH = os.path.join(CLEANED_DIR, "demographic_cleaned.csv")
 CRIME_CLEANED_PATH = os.path.join(CLEANED_DIR, "crime_cleaned.csv")
+MANIFEST_PATH = os.path.join(CLEANED_DIR, "data_manifest.json")
 
 # Bounding box for Chicago
 LAT_MIN, LAT_MAX = 41.64, 42.03
@@ -41,10 +48,13 @@ def process_demographics():
     print("="*50)
 
     # Check if raw census file exists
-    source_path = CENSUS_RAW_PATH
-    if not os.path.exists(source_path):
-        print(f"[ERROR] Demographic source dataset not found at {CENSUS_RAW_PATH}!")
-        sys.exit(1)
+    source_path = next((p for p in CENSUS_FALLBACK_PATHS if os.path.exists(p)), None)
+    if not source_path:
+        print(f"[!] Demographic source dataset not found at {CENSUS_RAW_PATH}.")
+        print("[!] Skipping census cleaning — dashboard will use a published Chicago population fallback.")
+        return None
+    if source_path != CENSUS_RAW_PATH:
+        print(f"[+] Using census file {source_path} (expected name is us_census.csv).")
 
     print(f"[+] Loading raw demographic data from: {source_path}")
     df_census = pd.read_csv(source_path)
@@ -224,6 +234,51 @@ def generate_realistic_crime_data(num_rows=8000):
 
     return df_synthetic
 
+def stratified_sample(df, group_col, sample_size, random_state=42):
+    """Proportional stratified sample without deprecated DataFrameGroupBy.apply."""
+    df = df.reset_index(drop=True)
+    n = min(int(sample_size), len(df))
+    if n <= 0:
+        return df.iloc[0:0].copy()
+
+    sizes = df[group_col].value_counts()
+    total = int(sizes.sum())
+    quotas = {}
+    remaining = n
+    keys = list(sizes.index)
+    for i, key in enumerate(keys):
+        capacity = int(sizes[key])
+        if i == len(keys) - 1:
+            take = min(remaining, capacity)
+        else:
+            take = int(round(n * capacity / total))
+            take = min(max(take, 0), capacity, remaining)
+        quotas[key] = take
+        remaining -= take
+
+    idx = 0
+    while remaining > 0 and idx < len(keys) * 2:
+        key = keys[idx % len(keys)]
+        if quotas[key] < int(sizes[key]):
+            quotas[key] += 1
+            remaining -= 1
+        idx += 1
+
+    parts = [
+        df[df[group_col] == key].sample(n=quotas[key], random_state=random_state)
+        for key in keys
+        if quotas[key] > 0
+    ]
+    return pd.concat(parts, ignore_index=True) if parts else df.sample(n=n, random_state=random_state)
+
+
+def parse_chicago_coord(series):
+    """Chicago exports often use a comma as the decimal separator (e.g. 41,773187628)."""
+    cleaned = series.astype(str).str.strip().str.replace(",", ".", regex=False)
+    cleaned = cleaned.replace({"nan": pd.NA, "None": pd.NA, "": pd.NA})
+    return pd.to_numeric(cleaned, errors="coerce")
+
+
 def process_crimes():
     """Cleans the Chicago Crime dataset, performing chunk-based loading and stratified sampling."""
     print("\n" + "="*50)
@@ -236,13 +291,13 @@ def process_crimes():
     if is_lfs_pointer(CRIME_RAW_PATH):
         print(f"[!] Chicago Crime raw file is a Git LFS pointer. Generating realistic synthetic sample...")
         df_cleaned = generate_realistic_crime_data(num_rows=8000)
-        initial_rows = 7000000  # Approximated original Chicago Crime database size
+        initial_rows = 8000
         final_rows = len(df_cleaned)
-        removed_rows = initial_rows - final_rows
+        removed_rows = 0
+        crime_source = "synthetic"
         cols_removed = ["Block", "IUCR", "Description", "Location Description", "Beat", "Ward", "Community Area", "FBI Code", "X Coordinate", "Y Coordinate", "Year", "Updated On", "Location"]
     else:
         print(f"[+] Found real crime dataset at: {CRIME_RAW_PATH}")
-        # Production-grade chunk loading for large 1.78 GB dataset
         chunksize = 100000
         cleaned_chunks = []
         total_raw_rows = 0
@@ -260,30 +315,37 @@ def process_crimes():
 
         for chunk_idx, chunk in enumerate(pd.read_csv(CRIME_RAW_PATH, chunksize=chunksize, usecols=usecols, low_memory=False)):
             total_raw_rows += len(chunk)
-            
-            # Clean chunk
-            # 1. Drop missing critical columns
-            chunk_cleaned = chunk.dropna(subset=["Latitude", "Longitude", "Primary Type"])
-            
-            # 2. Filter for geographic coordinates within Chicago
-            coord_filter = (chunk_cleaned["Latitude"] >= LAT_MIN) & (chunk_cleaned["Latitude"] <= LAT_MAX) & \
-                           (chunk_cleaned["Longitude"] >= LON_MIN) & (chunk_cleaned["Longitude"] <= LON_MAX)
+
+            chunk_cleaned = chunk.copy()
+            chunk_cleaned["Latitude"] = parse_chicago_coord(chunk_cleaned["Latitude"])
+            chunk_cleaned["Longitude"] = parse_chicago_coord(chunk_cleaned["Longitude"])
+            if "District" in chunk_cleaned.columns:
+                chunk_cleaned["District"] = pd.to_numeric(chunk_cleaned["District"], errors="coerce")
+
+            chunk_cleaned = chunk_cleaned.dropna(subset=["Latitude", "Longitude", "Primary Type"])
+
+            coord_filter = (
+                (chunk_cleaned["Latitude"] >= LAT_MIN) & (chunk_cleaned["Latitude"] <= LAT_MAX) &
+                (chunk_cleaned["Longitude"] >= LON_MIN) & (chunk_cleaned["Longitude"] <= LON_MAX)
+            )
             chunk_cleaned = chunk_cleaned[coord_filter]
-            
-            # Remove duplicates inside chunk
             chunk_cleaned = chunk_cleaned.drop_duplicates()
-            
+
             cleaned_chunks.append(chunk_cleaned)
             total_cleaned_rows += len(chunk_cleaned)
-            
+
             if (chunk_idx + 1) % 10 == 0:
                 print(f"    - Processed {total_raw_rows:,} raw rows... Cleaned: {total_cleaned_rows:,} rows")
 
         df_all_cleaned = pd.concat(cleaned_chunks, ignore_index=True)
-        # Drop duplicates overall
         df_all_cleaned = df_all_cleaned.drop_duplicates(subset=["ID"])
         total_cleaned_rows = len(df_all_cleaned)
         print(f"[+] Total cleaned crime rows available for sampling: {total_cleaned_rows:,}")
+        if total_cleaned_rows == 0:
+            raise RuntimeError(
+                "No geocoded crime rows after cleaning. "
+                "Latitude/Longitude may use a comma decimal separator or be empty."
+            )
 
         # Perform stratified sampling to reduce to 8,000 rows while preserving geographic diversity
         # We stratify on 'District' if present, otherwise on 'Primary Type'
@@ -291,28 +353,22 @@ def process_crimes():
         
         if "District" in df_all_cleaned.columns and df_all_cleaned["District"].nunique() > 1:
             print("[+] Performing geographically stratified sampling based on Police District...")
-            # Fill missing District values with 0/Unknown
             df_all_cleaned["District"] = df_all_cleaned["District"].fillna(0).astype(int)
-            
-            # Stratified sample
-            df_cleaned = df_all_cleaned.groupby("District", group_keys=False).apply(
-                lambda x: x.sample(n=int(np.ceil(sample_size * len(x) / total_cleaned_rows)), random_state=42)
-            )
-            # Clip to exact sample size in case of rounding errors
-            df_cleaned = df_cleaned.sample(n=sample_size, random_state=42)
+            df_cleaned = stratified_sample(df_all_cleaned, "District", sample_size)
         else:
             print("[+] Performing stratified sampling based on Crime Type...")
-            df_cleaned = df_all_cleaned.groupby("Primary Type", group_keys=False).apply(
-                lambda x: x.sample(n=min(len(x), int(np.ceil(sample_size * len(x) / total_cleaned_rows))), random_state=42)
-            )
-            df_cleaned = df_cleaned.sample(n=sample_size, random_state=42)
+            df_cleaned = stratified_sample(df_all_cleaned, "Primary Type", sample_size)
 
+        crime_source = "sampled_real"
         initial_rows = total_raw_rows
         final_rows = len(df_cleaned)
         removed_rows = initial_rows - final_rows
 
     # Verify no nulls in critical columns in final cleaned dataset
     df_cleaned = df_cleaned.dropna(subset=["Latitude", "Longitude", "Primary Type"])
+    if "Date" in df_cleaned.columns:
+        parsed_dates = pd.to_datetime(df_cleaned["Date"], format="mixed", errors="coerce")
+        df_cleaned["Date"] = parsed_dates.dt.strftime("%Y-%m-%d %H:%M:%S")
     final_rows = len(df_cleaned)
 
     # Save cleaned crime data
@@ -325,8 +381,38 @@ def process_crimes():
         "final_rows": final_rows,
         "removed_rows": removed_rows,
         "cols_kept": cols_to_keep,
-        "cols_removed": cols_removed
+        "cols_removed": cols_removed,
+        "crime_source": crime_source,
     }
+
+def write_manifest(demographics_meta, crime_meta):
+    """Writes a machine-readable provenance file consumed by the REST API."""
+    census_available = demographics_meta is not None
+    source = crime_meta.get("crime_source", "unknown")
+    warning = None
+    if source == "synthetic":
+        warning = (
+            "The Chicago Crime raw file was missing or a Git LFS pointer. "
+            f"{crime_meta['final_rows']} synthetic incidents were generated around "
+            "police district centers. This is an academic stand-in, not an official extract."
+        )
+    manifest = {
+        "crime_source": source,
+        "crime_rows": crime_meta["final_rows"],
+        "raw_rows_processed": crime_meta["initial_rows"] if source == "sampled_real" else None,
+        "census_available": census_available,
+        "census_rows": demographics_meta["final_rows"] if census_available else 0,
+        "generated_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "warning": warning,
+        "outputs": {
+            "crime": CRIME_CLEANED_PATH.replace("\\", "/"),
+            "demographics": CENSUS_CLEANED_PATH.replace("\\", "/") if census_available else None,
+        },
+    }
+    with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
+    print(f"[SUCCESS] Wrote data provenance manifest to: {MANIFEST_PATH}")
+
 
 def generate_report(demographics_meta, crime_meta):
     """Generates a comprehensive cleaning_report.md summarizing the results."""
@@ -334,6 +420,17 @@ def generate_report(demographics_meta, crime_meta):
     print("\n" + "="*50)
     print(" GENERATING CLEANING REPORT")
     print("="*50)
+
+    demo = demographics_meta or {
+        "initial_rows": 0,
+        "final_rows": 0,
+        "removed_rows": 0,
+    }
+    census_note = (
+        "Census tract extract written to `data/cleaned/demographic_cleaned.csv`."
+        if demographics_meta
+        else "Census raw file was missing — no tract extract was written. The API uses a published Chicago population fallback for rates."
+    )
 
     report_content = f"""# Data Cleaning & Reduction Report
 **Academic Project: Crime Hotspot Visualization using Crime and Demographic Data**
@@ -368,7 +465,8 @@ This report details the data analysis, cleaning, columns kept/removed, missing v
 ### Dataset Reduction & Geographically Stratified Sampling
 - **Goal:** Downsample the massive 1.78 GB dataset containing millions of rows to a light, representative set of **8,000 rows** suited for a fast, responsive 2-day academic study.
 - **Methodology:** We utilized **Geographically Stratified Sampling** based on `District`. By sampling proportionally within each Police District, we preserved the real-world geographic distribution of crimes and ensured that neighborhoods with higher crime rates are proportionally represented, without omitting quieter areas.
-- **Git LFS Handling:** If the raw file is a Git LFS pointer, the cleaning script automatically generates a statistically identical sample of 8,000 rows centered around actual Chicago police district centers to enable instant project visualization.
+- **Git LFS Handling:** If the raw file is a Git LFS pointer, the script generates **synthetic** points around police district centers and records `crime_source: synthetic` in `data/cleaned/data_manifest.json`. That extract is **not** statistically identical to the official Chicago Crime dataset.
+- **Provenance:** `{crime_meta.get("crime_source", "unknown")}`
 
 ### Crime Dataset Metrics
 | Metric | Value |
@@ -404,16 +502,19 @@ This report details the data analysis, cleaning, columns kept/removed, missing v
 ### Demographic Dataset Metrics
 | Metric | Value |
 | :--- | :--- |
-| **Initial Raw Rows** | {demographics_meta["initial_rows"]:,} |
-| **Cleaned & Filtered Rows (Illinois, Cook County)** | {demographics_meta["final_rows"]:,} |
-| **Total Rows Removed / Filtered Out** | {demographics_meta["removed_rows"]:,} |
+| **Initial Raw Rows** | {demo["initial_rows"]:,} |
+| **Cleaned & Filtered Rows (Illinois, Cook County)** | {demo["final_rows"]:,} |
+| **Total Rows Removed / Filtered Out** | {demo["removed_rows"]:,} |
+
+{census_note}
 
 ---
 
 ## 3. Summary of Outputs Generated
-1. **Cleaned Crime Data:** `data/cleaned/crime_cleaned.csv` ({crime_meta["final_rows"]:,} rows)
-2. **Cleaned Demographic Data:** `data/cleaned/demographic_cleaned.csv` ({demographics_meta["final_rows"]:,} rows)
-3. **Data Cleaning Pipeline:** `clean_data.py` (Fully automated, idempotent, and production-grade)
+1. **Cleaned Crime Data:** `data/cleaned/crime_cleaned.csv` ({crime_meta["final_rows"]:,} rows, source `{crime_meta.get("crime_source", "unknown")}`)
+2. **Cleaned Demographic Data:** `data/cleaned/demographic_cleaned.csv` ({demo["final_rows"]:,} rows)
+3. **Provenance manifest:** `data/cleaned/data_manifest.json`
+4. **Data Cleaning Pipeline:** `clean_data.py`
 """
 
     with open(report_path, "w", encoding="utf-8") as f:
@@ -424,6 +525,7 @@ def main():
     setup_directories()
     demographics_meta = process_demographics()
     crime_meta = process_crimes()
+    write_manifest(demographics_meta, crime_meta)
     generate_report(demographics_meta, crime_meta)
     
     print("\n" + "="*50)

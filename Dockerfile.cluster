@@ -1,0 +1,10 @@
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY clustering_service.py .
+ENV PROJECT_ROOT=/app
+ENV HOST=0.0.0.0
+ENV PORT=5001
+EXPOSE 5001
+CMD ["python", "clustering_service.py"]

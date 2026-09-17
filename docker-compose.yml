@@ -1,0 +1,38 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data/cleaned:/app/data/cleaned:ro
+    environment:
+      PROJECT_ROOT: /app
+      HOST: 0.0.0.0
+      PORT: 5000
+
+  cluster:
+    build:
+      context: .
+      dockerfile: Dockerfile.cluster
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./data/cleaned:/app/data/cleaned:ro
+    environment:
+      PROJECT_ROOT: /app
+      HOST: 0.0.0.0
+      PORT: 5001
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_CARTO_API_KEY: ${VITE_CARTO_API_KEY:-}
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+      - cluster

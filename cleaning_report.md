@@ -31,14 +31,15 @@ This report details the data analysis, cleaning, columns kept/removed, missing v
 ### Dataset Reduction & Geographically Stratified Sampling
 - **Goal:** Downsample the massive 1.78 GB dataset containing millions of rows to a light, representative set of **8,000 rows** suited for a fast, responsive 2-day academic study.
 - **Methodology:** We utilized **Geographically Stratified Sampling** based on `District`. By sampling proportionally within each Police District, we preserved the real-world geographic distribution of crimes and ensured that neighborhoods with higher crime rates are proportionally represented, without omitting quieter areas.
-- **Git LFS Handling:** If the raw file is a Git LFS pointer, the cleaning script automatically generates a statistically identical sample of 8,000 rows centered around actual Chicago police district centers to enable instant project visualization.
+- **Git LFS Handling:** If the raw file is a Git LFS pointer, the script generates **synthetic** points around police district centers and records `crime_source: synthetic` in `data/cleaned/data_manifest.json`. That extract is **not** statistically identical to the official Chicago Crime dataset.
+- **Provenance:** `sampled_real`
 
 ### Crime Dataset Metrics
 | Metric | Value |
 | :--- | :--- |
-| **Initial Raw Rows** | 7,000,000 |
+| **Initial Raw Rows** | 8,640,635 |
 | **Cleaned & Sampled Rows** | 8,000 |
-| **Total Rows Removed / Filtered Out** | 6,992,000 |
+| **Total Rows Removed / Filtered Out** | 8,632,635 |
 
 ---
 
@@ -71,9 +72,12 @@ This report details the data analysis, cleaning, columns kept/removed, missing v
 | **Cleaned & Filtered Rows (Illinois, Cook County)** | 1,319 |
 | **Total Rows Removed / Filtered Out** | 72,682 |
 
+Census tract extract written to `data/cleaned/demographic_cleaned.csv`.
+
 ---
 
 ## 3. Summary of Outputs Generated
-1. **Cleaned Crime Data:** `data/cleaned/crime_cleaned.csv` (8,000 rows)
+1. **Cleaned Crime Data:** `data/cleaned/crime_cleaned.csv` (8,000 rows, source `sampled_real`)
 2. **Cleaned Demographic Data:** `data/cleaned/demographic_cleaned.csv` (1,319 rows)
-3. **Data Cleaning Pipeline:** `clean_data.py` (Fully automated, idempotent, and production-grade)
+3. **Provenance manifest:** `data/cleaned/data_manifest.json`
+4. **Data Cleaning Pipeline:** `clean_data.py`

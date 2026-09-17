@@ -48,12 +48,13 @@ const StatCard = ({ title, value, icon: Icon, color = 'primary', subtext }) => {
           {title}
         </p>
         <h3 style={{
-          fontSize: '2.1rem',
+          fontSize: 'clamp(1.15rem, 2.2vw, 2.1rem)',
           fontWeight: '800',
           fontFamily: 'var(--font-heading)',
           color: '#fff',
-          lineHeight: '1',
-          marginBottom: '0.4rem'
+          lineHeight: '1.15',
+          marginBottom: '0.4rem',
+          overflowWrap: 'anywhere'
         }}>
           {value}
         </h3>

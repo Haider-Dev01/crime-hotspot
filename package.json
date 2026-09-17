@@ -1,0 +1,13 @@
+{
+  "name": "crime-hotspot",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n api,cluster,web -c blue,green,magenta \"npm run start --prefix backend\" \"python clustering_service.py\" \"npm run dev --prefix frontend\"",
+    "dev:api": "npm run start --prefix backend",
+    "dev:web": "npm run dev --prefix frontend",
+    "test": "python -m pytest tests/test_clustering.py && npm test --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

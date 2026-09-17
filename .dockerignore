@@ -1,0 +1,12 @@
+.git
+**/node_modules
+frontend/dist
+frontend/.env
+**/.venv
+**/__pycache__
+data/raw
+*.csv
+!data/cleaned/.gitkeep
+*.md
+.cursor
+canvases

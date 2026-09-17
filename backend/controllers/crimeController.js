@@ -1,9 +1,8 @@
 const fs = require('fs');
-const path = require('path');
 const csv = require('csv-parser');
+const { CRIME_CSV_PATH } = require('../lib/paths');
 
-// Path to the cleaned crime dataset
-const CSV_PATH = path.join(__dirname, '..', 'data', 'crime_cleaned.csv');
+const CSV_PATH = CRIME_CSV_PATH;
 
 // In-memory cache for parsed crime records to ensure instant API responses
 let crimesCache = [];
@@ -37,8 +36,9 @@ const loadCrimeData = () => {
           Latitude: data.Latitude ? parseFloat(data.Latitude) : null,
           Longitude: data.Longitude ? parseFloat(data.Longitude) : null,
           District: data.District ? parseInt(data.District, 10) : null,
-          Arrest: data.Arrest === 'true' || data.Arrest === 'True' || data.Arrest === true,
-          Domestic: data.Domestic === 'true' || data.Domestic === 'True' || data.Domestic === true
+          Arrest: ['true', 'True', 'TRUE', 't', '1', true].includes(data.Arrest),
+          Domestic: ['true', 'True', 'TRUE', 't', '1', true].includes(data.Domestic),
+
         });
       })
       .on('end', () => {

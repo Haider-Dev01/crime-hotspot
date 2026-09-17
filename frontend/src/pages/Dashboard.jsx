@@ -5,10 +5,20 @@ import StatCard from '../components/StatCard';
 import CrimeMap from '../components/CrimeMap';
 import CrimeChart from '../components/CrimeChart';
 import AnalyticsPanel from '../components/AnalyticsPanel';
+import DataSourceBanner from '../components/DataSourceBanner';
+import SocioPanel from '../components/SocioPanel';
+import TimeRangeFilter from '../components/TimeRangeFilter';
+import DbscanControls from '../components/DbscanControls';
 import {
-  ShieldAlert, MapPin, Layers, TrendingUp, Compass,
-  Search, Filter, RefreshCw, AlertTriangle, Target,
+  ShieldAlert, Layers, TrendingUp, Compass,
+  Search, Filter, RefreshCw, AlertTriangle, Target, Landmark, Users,
 } from 'lucide-react';
+
+const crimeYear = (crime) => {
+  if (!crime?.Date) return null;
+  const t = new Date(crime.Date);
+  return Number.isFinite(t.getTime()) ? t.getFullYear() : null;
+};
 
 const Dashboard = () => {
   // ── Data states ──────────────────────────────────────────────────────────
@@ -19,17 +29,28 @@ const Dashboard = () => {
   const [dynamicStats, setDynamicStats] = useState({});
   const [clusters, setClusters] = useState([]);
   const [clusterSummary, setClusterSummary] = useState(null);
+  const [datasetMeta, setDatasetMeta] = useState(null);
+  const [censusSummary, setCensusSummary] = useState(null);
+  const [districtSocio, setDistrictSocio] = useState(null);
 
   // ── Filter states ─────────────────────────────────────────────────────────
   const [selectedType, setSelectedType] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [years, setYears] = useState([]);
+  const [yearCounts, setYearCounts] = useState({});
+  const [yearStart, setYearStart] = useState(null);
+  const [yearEnd, setYearEnd] = useState(null);
+  const [epsKm, setEpsKm] = useState(0.5);
+  const [minSamples, setMinSamples] = useState(10);
+  const [focusClusterId, setFocusClusterId] = useState(null);
 
   // ── UI states ─────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
   const [clusterLoading, setClusterLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isClusterConnected, setIsClusterConnected] = useState(false);
   const [metrics, setMetrics] = useState({ totalCount: 0, categoriesCount: 0, districtsCount: 0, topType: 'N/A', topTypeCount: 0 });
 
   // ── Initial data load ─────────────────────────────────────────────────────
@@ -37,14 +58,20 @@ const Dashboard = () => {
     setLoading(true);
     setError(null);
     try {
-      const [crimesResponse, typesResponse] = await Promise.all([
+      const [crimesResponse, typesResponse, metaResponse, demoResponse, socioResponse] = await Promise.all([
         crimeService.getCrimes(),
         crimeService.getCrimeTypes(),
+        crimeService.getMeta().catch(() => null),
+        crimeService.getDemographicsSummary().catch(() => null),
+        crimeService.getDistrictSocio().catch(() => null),
       ]);
       const crimesList = crimesResponse.data || [];
       setAllCrimes(crimesList);
       setFilteredCrimes(crimesList);
       setTypes(typesResponse.data || []);
+      setDatasetMeta(metaResponse?.data || null);
+      setCensusSummary(demoResponse?.data || null);
+      setDistrictSocio(socioResponse?.data || null);
       const extractedDistricts = [...new Set(crimesList.map((c) => c.District).filter(Boolean))].sort((a, b) => a - b);
       setDistricts(extractedDistricts);
       setIsConnected(true);
@@ -60,14 +87,26 @@ const Dashboard = () => {
   const loadClusterData = async () => {
     setClusterLoading(true);
     try {
+      const fromYear = yearStart != null && yearEnd != null ? Math.min(yearStart, yearEnd) : null;
+      const toYear = yearStart != null && yearEnd != null ? Math.max(yearStart, yearEnd) : null;
+      const params = {
+        epsKm,
+        minSamples,
+        type: selectedType,
+        district: selectedDistrict,
+        from: fromYear != null ? `${fromYear}-01-01` : undefined,
+        to: toYear != null ? `${toYear}-12-31` : undefined,
+      };
       const [clusterResponse, summaryResponse] = await Promise.all([
-        clusterService.getClusters(),
-        clusterService.getClusterSummary(),
+        clusterService.getClusters(params),
+        clusterService.getClusterSummary(params),
       ]);
       setClusters(clusterResponse.data || []);
       setClusterSummary(summaryResponse.data || null);
+      setIsClusterConnected(true);
     } catch (err) {
       console.warn('DBSCAN clustering service unavailable:', err.message);
+      setIsClusterConnected(false);
     } finally {
       setClusterLoading(false);
     }
@@ -75,8 +114,28 @@ const Dashboard = () => {
 
   useEffect(() => {
     loadDashboardData();
-    loadClusterData();
   }, []);
+
+  useEffect(() => {
+    if (!allCrimes.length) return;
+    const ys = [...new Set(allCrimes.map(crimeYear).filter(Boolean))].sort((a, b) => a - b);
+    setYears(ys);
+    const counts = {};
+    ys.forEach((y) => { counts[y] = 0; });
+    allCrimes.forEach((c) => {
+      const y = crimeYear(c);
+      if (y != null) counts[y] = (counts[y] || 0) + 1;
+    });
+    setYearCounts(counts);
+    setYearStart((prev) => (prev == null && ys.length ? ys[0] : prev));
+    setYearEnd((prev) => (prev == null && ys.length ? ys[ys.length - 1] : prev));
+  }, [allCrimes]);
+
+  useEffect(() => {
+    if (yearStart == null || yearEnd == null) return undefined;
+    const timer = setTimeout(() => { loadClusterData(); }, 450);
+    return () => clearTimeout(timer);
+  }, [selectedType, selectedDistrict, yearStart, yearEnd, epsKm, minSamples]);
 
   // ── Client-side dynamic filtering ────────────────────────────────────────
   useEffect(() => {
@@ -84,8 +143,16 @@ const Dashboard = () => {
     if (selectedType) result = result.filter((c) => c.PrimaryType?.toUpperCase() === selectedType.toUpperCase());
     if (selectedDistrict) result = result.filter((c) => c.District?.toString() === selectedDistrict.toString());
     if (searchQuery) result = result.filter((c) => c.PrimaryType?.toLowerCase().includes(searchQuery.toLowerCase()));
+    if (yearStart != null && yearEnd != null) {
+      const lo = Math.min(yearStart, yearEnd);
+      const hi = Math.max(yearStart, yearEnd);
+      result = result.filter((c) => {
+        const y = crimeYear(c);
+        return y != null && y >= lo && y <= hi;
+      });
+    }
     setFilteredCrimes(result);
-  }, [selectedType, selectedDistrict, searchQuery, allCrimes]);
+  }, [selectedType, selectedDistrict, searchQuery, allCrimes, yearStart, yearEnd]);
 
   // ── Dynamic KPI recalculation ────────────────────────────────────────────
   useEffect(() => {
@@ -110,12 +177,27 @@ const Dashboard = () => {
     setDynamicStats(frequencies);
   }, [filteredCrimes]);
 
-  const handleResetFilters = () => { setSelectedType(''); setSelectedDistrict(''); setSearchQuery(''); };
-  const hasFilters = selectedType || selectedDistrict || searchQuery;
+  const handleResetFilters = () => {
+    setSelectedType('');
+    setSelectedDistrict('');
+    setSearchQuery('');
+    if (years.length) {
+      setYearStart(years[0]);
+      setYearEnd(years[years.length - 1]);
+    }
+    setEpsKm(0.5);
+    setMinSamples(10);
+    setFocusClusterId(null);
+  };
+  const timeNarrowed = years.length > 0 && yearStart != null && yearEnd != null
+    && (Math.min(yearStart, yearEnd) !== years[0] || Math.max(yearStart, yearEnd) !== years[years.length - 1]);
+  const hasFilters = selectedType || selectedDistrict || searchQuery || timeNarrowed;
 
   return (
-    <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '0 1.5rem 3rem 1.5rem' }}>
-      <Navbar isConnected={isConnected} />
+    <div className="dashboard-shell">
+      <Navbar isConnected={isConnected} isClusterConnected={isClusterConnected} crimeSource={datasetMeta?.crime_source} />
+
+      <DataSourceBanner meta={datasetMeta} />
 
       {/* ── Error Banner ── */}
       {error && (
@@ -132,20 +214,34 @@ const Dashboard = () => {
       )}
 
       {/* ── KPI Cards ── */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+      <section className="kpi-grid">
         <StatCard title="Total Crimes Mapped" value={metrics.totalCount.toLocaleString()} icon={ShieldAlert} color="primary" subtext="Active hotspots in current view" />
         <StatCard title="Crime Categories" value={metrics.categoriesCount} icon={Layers} color="secondary" subtext="Unique classification groups" />
         <StatCard title="Active Districts" value={metrics.districtsCount} icon={Compass} color="success" subtext="Chicago police zones covered" />
         <StatCard title="Most Common Crime" value={metrics.topType} icon={TrendingUp} color="warning" subtext={`${metrics.topTypeCount.toLocaleString()} incidents tracked`} />
         <StatCard title="DBSCAN Hotspots" value={clusterLoading ? '...' : clusters.length} icon={Target} color="primary" subtext="Automated cluster zones" />
+        <StatCard
+          title="Sample rate / 10k"
+          value={censusSummary?.sample_rate_per_10k != null ? censusSummary.sample_rate_per_10k.toFixed(2) : '—'}
+          icon={Users}
+          color="secondary"
+          subtext="Mapped extract vs Chicago pop. proxy"
+        />
+        <StatCard
+          title="Median income"
+          value={censusSummary?.medianIncome != null ? `$${Math.round(censusSummary.medianIncome).toLocaleString()}` : 'N/A'}
+          icon={Landmark}
+          color="success"
+          subtext={censusSummary?.available ? 'Cook County ACS tracts' : 'Load demographic_cleaned.csv'}
+        />
       </section>
 
       {/* ── Advanced Filters ── */}
-      <section className="glass-panel" style={{ padding: '1.5rem', marginBottom: '2.5rem', background: 'rgba(15,23,42,0.5)' }}>
+      <section className="glass-panel filter-panel">
         <h3 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Filter size={16} style={{ color: 'var(--color-primary)' }} /> Advanced Geospatial Filters
         </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem', alignItems: 'end' }}>
+        <div className="filter-grid">
           {/* Search */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
             <label style={{ fontSize: '0.7rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Search Category</label>
@@ -174,10 +270,26 @@ const Dashboard = () => {
             </select>
           </div>
           {/* Reset */}
-          <button onClick={handleResetFilters} disabled={!hasFilters}
+          <button onClick={handleResetFilters} disabled={!hasFilters && epsKm === 0.5 && minSamples === 10}
             style={{ height: '42px', padding: '0 1.25rem', background: hasFilters ? 'rgba(244,63,94,0.15)' : 'rgba(255,255,255,0.02)', color: hasFilters ? 'var(--color-primary)' : 'var(--text-muted)', border: `1px solid ${hasFilters ? 'rgba(244,63,94,0.3)' : 'var(--border-light)'}`, borderRadius: '8px', fontWeight: '600', cursor: hasFilters ? 'pointer' : 'not-allowed', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
             Clear Filters
           </button>
+          <TimeRangeFilter
+            years={years}
+            yearStart={yearStart ?? years[0]}
+            yearEnd={yearEnd ?? years[years.length - 1]}
+            yearCounts={yearCounts}
+            onYearStart={(y) => setYearStart(Math.min(y, yearEnd ?? y))}
+            onYearEnd={(y) => setYearEnd(Math.max(y, yearStart ?? y))}
+          />
+          <DbscanControls
+            epsKm={epsKm}
+            minSamples={minSamples}
+            onEps={setEpsKm}
+            onMinSamples={setMinSamples}
+            paramsUsed={clusterSummary?.params}
+            clusterCount={clusters.length}
+          />
         </div>
       </section>
 
@@ -187,7 +299,8 @@ const Dashboard = () => {
           <div>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold' }}>Geospatial Hotspot Map</h2>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              Individual Markers · Density Heatmap · DBSCAN Cluster Zones — use the toggle inside the map.
+              Individual markers · heatmap · DBSCAN convex hulls · district rates. Click a ranked zone below to zoom.
+
             </p>
           </div>
           {hasFilters && (
@@ -202,8 +315,18 @@ const Dashboard = () => {
             <p style={{ fontSize: '0.9rem', fontWeight: '600' }}>Fetching dataset from REST API...</p>
           </div>
         ) : (
-          <CrimeMap crimes={filteredCrimes} clusters={clusters} />
+          <CrimeMap
+            crimes={filteredCrimes}
+            clusters={clusters}
+            districtGeojson={districtSocio?.geojson || null}
+            selectedDistrict={selectedDistrict}
+            focusClusterId={focusClusterId}
+          />
         )}
+      </section>
+
+      <section className="glass-panel" style={{ padding: '1.75rem', marginBottom: '2.5rem' }}>
+        <SocioPanel socio={districtSocio} census={censusSummary} />
       </section>
 
       {/* ── Analytics Intelligence Panel ── */}
@@ -214,7 +337,7 @@ const Dashboard = () => {
             <span>Running DBSCAN spatial clustering algorithm...</span>
           </div>
         ) : (
-          <AnalyticsPanel summary={clusterSummary} clusters={clusters} />
+          <AnalyticsPanel summary={clusterSummary} clusters={clusters} onSelectCluster={setFocusClusterId} />
         )}
       </section>
 

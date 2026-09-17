@@ -1,0 +1,13 @@
+{
+  "crime_source": "sampled_real",
+  "crime_rows": 8000,
+  "raw_rows_processed": 8640635,
+  "census_available": true,
+  "census_rows": 1319,
+  "generated_at": "2026-09-17T21:15:07.382559+00:00",
+  "warning": null,
+  "outputs": {
+    "crime": "data/cleaned/crime_cleaned.csv",
+    "demographics": "data/cleaned/demographic_cleaned.csv"
+  }
+}

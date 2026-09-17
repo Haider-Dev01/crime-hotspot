@@ -6,9 +6,10 @@ const crimeRoutes = require('./routes/crimeRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Enable Cross-Origin Resource Sharing (CORS)
-// Allows frontend applications (e.g. on other ports/hosts) to make requests to the REST API
-app.use(cors());
+const corsOrigin = process.env.CORS_ORIGIN;
+app.use(cors(corsOrigin && corsOrigin !== '*'
+  ? { origin: corsOrigin.split(',').map((o) => o.trim()).filter(Boolean) }
+  : {}));
 
 // Body parser middleware (if any POST requests are introduced later)
 app.use(express.json());
@@ -31,7 +32,10 @@ app.get('/', (req, res) => {
       allCrimes: '/api/crimes',
       crimesByType: '/api/crimes?type=THEFT',
       uniqueCrimeTypes: '/api/crimes/types',
-      statsByType: '/api/stats/types'
+      statsByType: '/api/stats/types',
+      datasetMeta: '/api/meta',
+      demographicsSummary: '/api/demographics/summary',
+      districtSocio: '/api/stats/districts'
     }
   });
 });
@@ -57,7 +61,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start listening on the specified port
-app.listen(PORT, () => {
+app.listen(PORT, process.env.HOST || '0.0.0.0', () => {
   console.log(`\n==================================================`);
   console.log(`  CRIME HOTSPOT BACKEND STARTED SUCCESSFULLY!`);
   console.log(`  Server running at: http://localhost:${PORT}`);

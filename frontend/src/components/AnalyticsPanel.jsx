@@ -3,7 +3,7 @@ import { Target, TrendingDown, AlertTriangle, BarChart2, MapPin, Percent } from 
 
 const DANGER_GRADIENT = ['#f43f5e', '#f97316', '#eab308', '#3b82f6', '#8b5cf6', '#06b6d4'];
 
-const AnalyticsPanel = ({ summary, clusters }) => {
+const AnalyticsPanel = ({ summary, clusters, onSelectCluster }) => {
   if (!summary) return null;
 
   const typeDistribution = summary.type_distribution || {};
@@ -51,7 +51,7 @@ const AnalyticsPanel = ({ summary, clusters }) => {
       </div>
 
       {/* ── Two-column grid: Most Dangerous + Crime Types Chart ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '1.5rem' }}>
+      <div className="analytics-split">
 
         {/* Most Dangerous Hotspot Zones */}
         <div style={{ background: 'rgba(30, 41, 59, 0.4)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '1.25rem' }}>
@@ -60,13 +60,23 @@ const AnalyticsPanel = ({ summary, clusters }) => {
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
             {(clusters || []).slice(0, 6).map((cluster, i) => (
-              <div key={cluster.id} style={{
+              <button
+                type="button"
+                key={cluster.id}
+                onClick={() => onSelectCluster?.(cluster.id)}
+                style={{
                 display: 'flex', alignItems: 'center', gap: '0.75rem',
                 padding: '0.6rem 0.8rem',
                 background: i === 0 ? 'rgba(244,63,94,0.08)' : 'rgba(255,255,255,0.02)',
                 border: `1px solid ${i === 0 ? 'rgba(244,63,94,0.2)' : 'rgba(255,255,255,0.04)'}`,
                 borderRadius: '8px',
-              }}>
+                width: '100%',
+                textAlign: 'left',
+                cursor: 'pointer',
+                color: 'inherit',
+                fontFamily: 'inherit',
+              }}
+              >
                 <span style={{
                   width: '24px', height: '24px', borderRadius: '50%', flexShrink: 0,
                   background: DANGER_GRADIENT[i] || '#64748b',
@@ -89,7 +99,7 @@ const AnalyticsPanel = ({ summary, clusters }) => {
                 }}>
                   {cluster.crime_count}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
