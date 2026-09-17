@@ -6,10 +6,7 @@ const crimeRoutes = require('./routes/crimeRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const corsOrigin = process.env.CORS_ORIGIN;
-app.use(cors(corsOrigin && corsOrigin !== '*'
-  ? { origin: corsOrigin.split(',').map((o) => o.trim()).filter(Boolean) }
-  : {}));
+app.use(cors({ origin: true }));
 
 // Body parser middleware (if any POST requests are introduced later)
 app.use(express.json());

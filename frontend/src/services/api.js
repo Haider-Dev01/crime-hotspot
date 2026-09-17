@@ -1,18 +1,34 @@
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://crime-hotspot-owyh.onrender.com' : '');
-const CLUSTER_BASE = import.meta.env.VITE_CLUSTER_API_URL || (import.meta.env.PROD ? 'https://crime-hotspot-1.onrender.com' : '/cluster-api');
+const stripSlash = (value) => String(value || '').trim().replace(/\/$/, '');
+
+const usableUrl = (value) => {
+  const url = stripSlash(value);
+  if (!url) return '';
+  if (/localhost|127\.0\.0\.1/i.test(url)) return '';
+  return url;
+};
+
+const fromEnvApi = usableUrl(import.meta.env.VITE_API_URL);
+const fromEnvCluster = usableUrl(import.meta.env.VITE_CLUSTER_API_URL);
+const PROD_API = 'https://crime-hotspot-1.onrender.com';
+
+const API_BASE = (import.meta.env.PROD && /crime-hotspot-owyh/i.test(fromEnvApi) ? '' : fromEnvApi)
+  || (import.meta.env.PROD ? PROD_API : '');
+
+const CLUSTER_BASE = fromEnvCluster
+  || (import.meta.env.PROD ? PROD_API : '/cluster-api');
 
 const apiClient = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 10000,
+  timeout: import.meta.env.PROD ? 90000 : 10000,
 });
 
 const clusterClient = axios.create({
   baseURL: CLUSTER_BASE,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 60000,
+  timeout: 90000,
 });
 
 export const crimeService = {
@@ -65,4 +81,5 @@ function buildClusterParams({ epsKm, minSamples, type, district, from, to } = {}
   return params;
 }
 
+export { API_BASE, CLUSTER_BASE };
 export default apiClient;

@@ -5,6 +5,7 @@ Flask microservice: DBSCAN on Chicago crime coordinates with optional
 temporal / type / district filters and tunable eps / min_samples.
 """
 
+import json
 import math
 import os
 from collections import OrderedDict
@@ -16,14 +17,11 @@ from flask_cors import CORS
 from sklearn.cluster import DBSCAN
 
 app = Flask(__name__)
-_cors_origin = os.environ.get("CORS_ORIGIN", "*")
-if _cors_origin == "*":
-    CORS(app)
-else:
-    CORS(app, origins=[o.strip() for o in _cors_origin.split(",") if o.strip()])
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 ROOT_DIR = os.environ.get("PROJECT_ROOT", os.path.dirname(os.path.abspath(__file__)))
 CSV_PATH = os.path.join(ROOT_DIR, "data", "cleaned", "crime_cleaned.csv")
+MANIFEST_PATH = os.path.join(ROOT_DIR, "data", "cleaned", "data_manifest.json")
 
 CLUSTER_COLORS = [
     "#f43f5e", "#3b82f6", "#10b981", "#f59e0b", "#8b5cf6", "#06b6d4",
@@ -264,18 +262,82 @@ def get_clusters_for_request():
     return result
 
 
+def as_bool(value):
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "t", "yes"}
+
+
+def serialize_crime(row):
+    case = row.get("Case Number", row.get("CaseNumber"))
+    date_val = row.get("Date")
+    if hasattr(date_val, "strftime"):
+        date_val = date_val.strftime("%Y-%m-%d %H:%M:%S")
+    elif date_val is not None and not isinstance(date_val, str):
+        date_val = str(date_val)
+    district = row.get("District")
+    crime_id = row.get("ID")
+    return {
+        "ID": None if pd.isna(crime_id) else int(crime_id),
+        "CaseNumber": None if pd.isna(case) else str(case),
+        "Date": None if date_val in (None, "NaT") or (isinstance(date_val, float) and pd.isna(date_val)) else str(date_val),
+        "PrimaryType": None if pd.isna(row.get("_type")) else str(row.get("_type")),
+        "Latitude": None if pd.isna(row.get("Latitude")) else float(row.get("Latitude")),
+        "Longitude": None if pd.isna(row.get("Longitude")) else float(row.get("Longitude")),
+        "District": None if pd.isna(district) else int(district),
+        "Arrest": as_bool(row.get("Arrest", False)),
+        "Domestic": as_bool(row.get("Domestic", False)),
+    }
+
+
 @app.route("/")
 def health():
     return jsonify({
         "service": "Crime Hotspot DBSCAN Clustering Service",
         "status": "online",
-        "port": 5001,
+        "port": int(os.environ.get("PORT", "5001")),
         "endpoints": {
+            "crimes": "/api/crimes",
+            "crimeTypes": "/api/crimes/types",
+            "meta": "/api/meta",
             "clusters": "/api/clusters",
             "summary": "/api/clusters/summary",
         },
         "query_params": ["eps", "min_samples", "type", "district", "from", "to"],
     })
+
+
+@app.route("/api/crimes")
+def api_crimes():
+    try:
+        df = load_crimes_frame()
+        crime_type = (request.args.get("type") or "").strip()
+        if crime_type:
+            df = df[df["_type"].str.upper() == crime_type.upper()]
+        data = [serialize_crime(row) for row in df.to_dict("records")]
+        return jsonify({"success": True, "count": len(data), "data": data})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/crimes/types")
+def api_crime_types():
+    try:
+        types = sorted({str(t) for t in load_crimes_frame()["_type"].dropna().unique() if str(t)})
+        return jsonify({"success": True, "count": len(types), "data": types})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/meta")
+def api_meta():
+    meta = {"crime_source": "unknown", "is_synthetic": False}
+    if os.path.exists(MANIFEST_PATH):
+        with open(MANIFEST_PATH, encoding="utf-8") as f:
+            meta.update(json.load(f))
+        meta["is_synthetic"] = meta.get("crime_source") == "synthetic"
+        meta["census_tracts"] = meta.get("census_rows")
+    return jsonify({"success": True, "data": meta})
 
 
 @app.route("/api/clusters")

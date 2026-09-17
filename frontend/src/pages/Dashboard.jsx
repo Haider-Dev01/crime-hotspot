@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { crimeService, clusterService } from '../services/api';
+import { crimeService, clusterService, API_BASE } from '../services/api';
 import Navbar from '../components/Navbar';
 import StatCard from '../components/StatCard';
 import CrimeMap from '../components/CrimeMap';
@@ -76,7 +76,11 @@ const Dashboard = () => {
       setDistricts(extractedDistricts);
       setIsConnected(true);
     } catch (err) {
-      setError('Could not connect to the Express REST API at http://localhost:5000.');
+      const target = API_BASE || 'http://localhost:5000';
+      const detail = err?.response?.status
+        ? `HTTP ${err.response.status}`
+        : (err?.message || 'network error');
+      setError(`Impossible de joindre l’API crimes (${target}). ${detail}. Sur Render (plan gratuit), le premier appel peut prendre jusqu’à 1 min.`);
       setIsConnected(false);
     } finally {
       setLoading(false);
